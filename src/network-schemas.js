@@ -27,6 +27,10 @@ function registerNetworkSchemas() {
   NAF.schemas.add({
     template: "#remote-avatar",
     components: [
+      "faceExpressionsData", //XAVIER
+      /*{ // XAVIER: Face expressions will go there
+        component: "userData"
+      },*/
       {
         component: "position",
         requiresNetworkUpdate: vectorRequiresUpdate(0.001)

@@ -4,6 +4,9 @@ import pinnedEntityToGltf from "./utils/pinned-entity-to-gltf";
 import { hackyMobileSafariTest } from "./utils/detect-touchscreen";
 import { SignInMessages } from "./react-components/auth/SignInModal";
 
+// XAVIER: import JEELIZFACEEXPRESSIONS
+import { JEELIZFACEEXPRESSIONS, NN } from 'faceexpressions';
+
 const isBotMode = qsTruthy("bot");
 const isMobile = AFRAME.utils.device.isMobile();
 const forceEnableTouchscreen = hackyMobileSafariTest();
@@ -23,6 +26,75 @@ import { getAvatarSrc, getAvatarType } from "./utils/avatar-utils";
 import { SOUND_ENTER_SCENE } from "./systems/sound-effects-system";
 
 const isIOS = AFRAME.utils.device.isIOS();
+
+// XAVIER:
+// BEGIN XAVIER FUNCS
+
+// JSON data should not be typed arrays otherwise they become dicts and it sucks
+// so we need to copy them by values. it sucks too
+function copy_typedArrayToArray(src, dst){
+  const n = Math.min(src.length, dst.length);
+  for (let i=0; i<n; ++i){
+    dst[i] = src[i];
+  }
+}
+
+
+function test_isReadyPlayerMeThreeAvatar (threeAvatar) {
+  const readyPlayerMeChildrenNames = ['EyeLeft', 'EyeRight', 'Wolf3D_Hands', 'Wolf3D_Shirt', 'Wolf3D_Teeth'];
+  if (!threeAvatar.children || threeAvatar.children.length !== readyPlayerMeChildrenNames.length){
+    return false;
+  }
+  for (let i = 0; i<readyPlayerMeChildrenNames.length; ++i){
+    if (!threeAvatar.children[i] || !threeAvatar.children[i].name){
+      return false;
+    }
+
+    //if (threeAvatar.children[i].name !== readyPlayerMeChildrenNames[i]){ // children order count
+    if (readyPlayerMeChildrenNames.indexOf(threeAvatar.children[i].name) === -1){ // children order does not count
+      debugger;
+      return false;
+    }
+  }
+  return true;
+}
+
+
+function init_weboji(){
+  const canvas = document.createElement('canvas');
+  canvas.setAttribute('width', 512)
+  canvas.setAttribute('height', 512);
+
+  return new Promise(function(accept, reject){
+    JEELIZFACEEXPRESSIONS.init({
+      canvas,
+      NNC: NN,
+      callbackReady: function(errCode){
+        if (errCode){
+          alert('ERROR: cannot init JEELIZFACEEXPRESSIONS. errCode =' + errCode);
+          reject(errCode);
+          return;
+        }
+        document.body.appendChild(canvas);
+        const ccss = canvas.style;
+        ccss.position = 'fixed';
+        ccss.top = '80px';
+        ccss.right = '8px';
+        ccss.zIndex = '9';
+        ccss.maxWidth = '25vw';
+        ccss.maxHeight = '25vh';
+        ccss.borderRadius = '12px';
+
+        console.log('INFO: JEELIZFACEEXPRESSIONS is ready!');
+        accept();
+      } //end callbackReady()
+    });
+  }); //end returned promise
+}
+
+
+
+// END XAVIER FUNCS
 
 export default class SceneEntryManager {
   constructor(hubChannel, authChannel, history) {
@@ -51,6 +123,32 @@ export default class SceneEntryManager {
   hasEntered = () => {
     return this._entered;
   };
+
+  // XAVIER: BEGIN DYNAMIC METHODS
+  update_webojiDetectionValues = () => {
+    const avatarRig = this.avatarRig;
+    if (avatarRig && avatarRig.components.faceExpressionsData){
+
+      const faceExpressionsData = avatarRig.components.faceExpressionsData.data;
+
+      if (!faceExpressionsData.isReady){
+        faceExpressionsData.isReady = true;
+      }
+
+      const morphTargetInfluences = JEELIZFACEEXPRESSIONS.get_morphTargetInfluencesStabilized();
+      const teethOpening = JEELIZFACEEXPRESSIONS.is_detected() ? morphTargetInfluences[6] : 0;
+      const rotation = JEELIZFACEEXPRESSIONS.get_rotationStabilized();
+      
+      faceExpressionsData.teethOpening = teethOpening;
+      copy_typedArrayToArray(morphTargetInfluences, faceExpressionsData.morphTargetInfluences);
+      copy_typedArrayToArray(rotation, faceExpressionsData.rotation);
+      //console.log('teethOpening0: ', teethOpening);
+    }
+
+    window.requestAnimationFrame(this.update_webojiDetectionValues);
+  }
+
+  // XAVIER: END DYNAMIC METHODS
 
   enterScene = async (enterInVR, muteOnEntry) => {
     document.getElementById("viewing-camera").removeAttribute("scene-preview-camera");
@@ -118,6 +216,40 @@ export default class SceneEntryManager {
       });
     })();
 
+
+    // XAVIER: test if it is a readyplayerme mesh
+    // to initilize Weboji or not
+    const avatarRig = this.avatarRig;
+    let threeAvatar = null;
+    const that = this;
+    const extract_threeAvatar = function(){
+      if (threeAvatar) return;
+      avatarRig.object3D.traverse(function(threeNode){
+        if (threeNode.name === 'AvatarRoot'){
+          threeAvatar = threeNode;
+        }
+      });
+      if (threeAvatar){
+        window.debugThreeAvatar = threeAvatar;
+
+        // test if it is a readyplayerme avatar:
+        if (!test_isReadyPlayerMeThreeAvatar(threeAvatar)){
+          return;
+        }
+
+        //TODO: initialize Weboji
+        init_weboji().then(function(){
+          that.update_webojiDetectionValues();
+        }).catch(function(err){
+          debugger;
+          console.log('CANNOT INIT WEBOJI. ERR = ', err);
+        });
+      }
+    }
+    extract_threeAvatar();
+    avatarRig.addEventListener('DOMNodeInserted', extract_threeAvatar);
+
+
     // Bump stored entry count after 30s
     setTimeout(() => this.store.bumpEntryCount(), 30000);
 
@@ -167,6 +299,9 @@ export default class SceneEntryManager {
     if (avatarScale) {
       this.avatarRig.setAttribute("scale", { x: avatarScale, y: avatarScale, z: avatarScale });
     }
+
+    // XAVIER: for debug
+    window.debugAvatarRig = this.avatarRig;
   };
 
   _setPlayerInfoFromProfile = async (force = false) => {
@@ -546,8 +681,11 @@ export default class SceneEntryManager {
   };
 
   _spawnAvatar = () => {
+    // Triggered when the user is joining the room (not the others)
     this.avatarRig.setAttribute("networked", "template: #remote-avatar; attachTemplateToLocal: false;");
     this.avatarRig.setAttribute("networked-avatar", "");
+    this.avatarRig.setAttribute("faceExpressionsData", ""); //XAVIER
+
     this.avatarRig.emit("entered");
   };
 

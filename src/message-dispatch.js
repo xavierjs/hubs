@@ -68,6 +68,11 @@ export default class MessageDispatch extends EventTarget {
           }
         }
         break;
+      // XAVIER: Add a new type of messages:
+      case "faceExpr":
+        console.log('Dispatch FaceExpr message');
+        
+        break;
       case "grow":
         for (let i = 0; i < scales.length; i++) {
           if (scales[i] > curScale.x) {

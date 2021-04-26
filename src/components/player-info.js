@@ -158,6 +158,7 @@ AFRAME.registerComponent("player-info", {
     this.applyDisplayName();
 
     const modelEl = this.el.querySelector(".model");
+    
     if (this.data.avatarSrc && modelEl) {
       modelEl.components["gltf-model-plus"].jsonPreprocessor = ensureAvatarNodes;
       modelEl.setAttribute("gltf-model-plus", "src", this.data.avatarSrc);
@@ -183,6 +184,7 @@ AFRAME.registerComponent("player-info", {
         el.setAttribute("emit-scene-event-on-remove", "event:action_end_video_sharing");
       }
     }
+    
   },
   handleModelError() {
     window.APP.store.resetToRandomDefaultAvatar();
